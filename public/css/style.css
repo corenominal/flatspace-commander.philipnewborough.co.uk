@@ -24,6 +24,12 @@ html, body {
   font-family: var(--font-mono);
 }
 
+body {
+    user-select: none;
+    touch-action: pan-x pan-y;
+    overscroll-behavior: none;
+}
+
 /* --- Stage (game viewport container) ----------- */
 #stage {
   position: fixed;
