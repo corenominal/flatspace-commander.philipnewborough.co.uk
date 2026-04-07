@@ -9,8 +9,8 @@
  *   GameLoop    — requestAnimationFrame driver
  */
 
-import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775590562032';
-import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775590562032';
+import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775590841918';
+import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775590841918';
 
 'use strict';
 
