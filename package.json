@@ -1,0 +1,9 @@
+{
+  "name": "flatspace-commander",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "cache-bust": "node cache-bust.js"
+  }
+}
