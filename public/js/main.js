@@ -9,8 +9,8 @@
  *   GameLoop    — requestAnimationFrame driver
  */
 
-import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775853268285';
-import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775853268285';
+import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775853369888';
+import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775853369888';
 
 'use strict';
 
@@ -4836,13 +4836,11 @@ function gameLoop(timestamp) {
       for (const drop of _miningDrops) drop.update(_dtSec);
       for (const drop of _miningDrops) drop.draw(ctx);
 
-      // Draw mining beam (straight up) whenever asteroids are on screen
-      if (_hasMiningLaser() && !_combatPaused && _flightAsteroids.some(a => !a.mined && !a.hit)) {
-        // Beam terminus: the asteroid being mined, or the top of the play area
-        const _beamEndY = _miningTarget ? _miningTarget.y : 34;
+      // Draw mining beam only when locked on to a target asteroid
+      if (_hasMiningLaser() && !_combatPaused && _miningTarget) {
         _drawMiningBeam(ctx,
           player.x, player.y - PLAYER_HEIGHT * 0.5,
-          player.x, _beamEndY);
+          player.x, _miningTarget.y);
       }
 
       player.update();
