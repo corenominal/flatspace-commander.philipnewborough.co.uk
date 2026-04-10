@@ -664,6 +664,38 @@ class EnemyShip {
     this.fireTimer = this.fireInterval * (0.3 + Math.random() * 0.7);
     this.hitFlash  = 0;   // ms remaining
     this.dead      = false;
+
+    // ── Movement mode ('osc' | 'solo_sweep' | 'd_shape' | 'center_sweep' | 'flank_lissajous')
+    this.moveMode  = 'osc';  // default; overridden by CombatEncounter.start() for non-alien ships
+
+    // Solo sweep state
+    this.swMinX    = 0;
+    this.swMaxX    = 0;
+    this.swTargetX = 0;
+    this.swSpeed   = 0;
+    this.swPause   = 0;   // ms of pause remaining at each reversal
+    this.swYPhase  = Math.random() * Math.PI * 2;  // vertical oscillation phase
+    this.swYAmp    = 0;   // vertical oscillation amplitude
+
+    // D-shape loop state (2-ship formation)
+    this.dPhase      = 0;
+    this.dSpeed      = 0;   // rad/s
+    this.dCenterX    = 0;
+    this.dCenterY    = 0;
+    this.dRx         = 0;  // horizontal radius
+    this.dRy         = 0;  // vertical radius
+    this.dFlatX      = 0;  // x-clip for the flat side of the D
+    this.dUseLeftClip = true;  // true = flat on left (D), false = flat on right (reversed D)
+
+    // Lissajous state (3-ship flank ships)
+    this.lissPhase     = Math.random() * Math.PI * 2;
+    this.lissXAmp      = 0;
+    this.lissYAmp      = 0;
+    this.lissYFreqMult = 1.3;
+    this.lissYPhase    = 0;
+
+    // Alien orbit direction: +1 = clockwise, -1 = counter-clockwise
+    this.orbitDir = 1;
   }
 
   isAlive() { return !this.dead; }
@@ -693,15 +725,97 @@ class EnemyShip {
 
   update(dtMs, canvasW) {
     if (this.dead) return;
-    this.oscPhase += dtMs * 0.0014;
-    const amp = this.speed * 0.38;
-    this.x = Math.max(
-      this.width / 2 + 8,
-      Math.min(canvasW - this.width / 2 - 8,
-        this.homeX + Math.sin(this.oscPhase) * amp),
-    );
     this.fireTimer -= dtMs;
     if (this.hitFlash > 0) this.hitFlash -= dtMs;
+
+    const marginL = this.width / 2 + 8;
+    const marginR = canvasW - this.width / 2 - 8;
+
+    // ── Solo sweep: full-width back-and-forth with random speed, pauses & vertical drift ──
+    if (this.moveMode === 'solo_sweep') {
+      if (this.swPause > 0) {
+        this.swPause -= dtMs;
+      } else {
+        const dx   = this.swTargetX - this.x;
+        const step = Math.sign(dx) * this.swSpeed * (dtMs / 1000);
+        if (Math.abs(dx) <= Math.abs(step) + 1) {
+          this.x      = this.swTargetX;
+          this.swPause = 100 + Math.random() * 320;
+          this.swSpeed = 100 + Math.random() * 100;
+          // Next target near the opposite edge with slight random offset
+          const range = this.swMaxX - this.swMinX;
+          if (this.swTargetX < this.swMinX + range * 0.5) {
+            this.swTargetX = this.swMaxX - Math.random() * range * 0.12;
+          } else {
+            this.swTargetX = this.swMinX + Math.random() * range * 0.12;
+          }
+        } else {
+          this.x += step;
+        }
+      }
+      // Slow vertical oscillation — biased upward, hard-capped so ship stays near top
+      this.swYPhase += dtMs * 0.00075;
+      const yRaw = this.homeY + this.swYAmp * Math.sin(this.swYPhase);
+      this.y = Math.max(60, Math.min(this.homeY + 18, yRaw));
+      return;
+    }
+
+    // ── D-shape loop: leader and follower trace a D-shaped path together ──
+    if (this.moveMode === 'd_shape') {
+      this.dPhase += this.dSpeed * (dtMs / 1000);
+      const rawX = this.dCenterX + this.dRx * Math.cos(this.dPhase);
+      const rawY = this.dCenterY + this.dRy * Math.sin(this.dPhase);
+      // Clip one side to create the flat stroke of the D (left or right depending on encounter)
+      this.x = this.dUseLeftClip
+        ? Math.max(this.dFlatX, Math.min(marginR, rawX))
+        : Math.max(marginL, Math.min(this.dFlatX, rawX));
+      this.y = Math.max(60, rawY);
+      return;
+    }
+
+    // ── Center sweep (3-ship centre slot): L-R oscillation only ──
+    if (this.moveMode === 'center_sweep') {
+      this.oscPhase += dtMs * 0.0014;
+      const amp = this.speed * 0.45;
+      this.x = Math.max(marginL, Math.min(marginR, this.homeX + Math.sin(this.oscPhase) * amp));
+      return;
+    }
+
+    // ── Flank Lissajous (3-ship flanks): L-R + U-D via two oscillators ──
+    if (this.moveMode === 'flank_lissajous') {
+      this.lissPhase += dtMs * 0.0012;
+      this.x = Math.max(marginL, Math.min(marginR,
+        this.homeX + this.lissXAmp * Math.sin(this.lissPhase)));
+      this.y = Math.max(60,
+        this.homeY + this.lissYAmp * Math.sin(this.lissPhase * this.lissYFreqMult + this.lissYPhase));
+      return;
+    }
+
+    // ── Alien wave (Thargoid): Lissajous horizontal + upward-biased vertical ──
+    if (this.moveMode === 'alien_wave') {
+      this.oscPhase += dtMs * 0.0012;
+      const hAmp = canvasW * 0.22;
+      const vAmp = this.lissYAmp;
+      // Vertical: sin shifted so motion is mostly upward; cap at homeY + 18px below
+      const yRaw = this.homeY + vAmp * Math.sin(this.oscPhase * 0.58 + Math.PI * 0.5);
+      this.x = Math.max(marginL, Math.min(marginR, this.homeX + Math.sin(this.oscPhase) * hAmp));
+      this.y = Math.max(60, Math.min(this.homeY + 18, yRaw));
+      return;
+    }
+
+    // ── Alien orbit (Thargon escorts): elliptical orbit around home position ──
+    if (this.moveMode === 'alien_orbit') {
+      this.lissPhase += this.orbitDir * 0.0016 * dtMs;
+      this.x = Math.max(marginL, Math.min(marginR,
+        this.homeX + this.lissXAmp * Math.cos(this.lissPhase)));
+      this.y = Math.max(60, this.homeY + this.lissYAmp * Math.sin(this.lissPhase));
+      return;
+    }
+
+    // ── Default 'osc': simple sinusoidal horizontal wobble (traders) ──
+    this.oscPhase += dtMs * 0.0014;
+    const amp = this.speed * 0.38;
+    this.x = Math.max(marginL, Math.min(marginR, this.homeX + Math.sin(this.oscPhase) * amp));
   }
 
   render(ctx) {
@@ -805,10 +919,70 @@ export class CombatEncounter {
       new EnemyShip(typeId, homePos[i].x, homePos[i].y),
     );
 
+    // ── Assign movement modes for non-alien ships ──────────────────────────
+    if (this.scenario.type !== 'alien') {
+      if (count === 1) {
+        // Full-width random sweep with vertical drift
+        const e      = this.enemies[0];
+        const margin = e.width / 2 + 8;
+        e.moveMode   = 'solo_sweep';
+        e.swMinX     = margin;
+        e.swMaxX     = canvasW - margin;
+        e.swTargetX  = e.swMaxX;  // first sweep goes right
+        e.swSpeed    = 110 + Math.random() * 80;
+        e.swPause    = 0;
+        e.swYAmp     = 42;  // vertical oscillation amplitude (px)
+
+      } else if (count === 2) {
+        // Both ships trace a D-shaped loop; direction chosen randomly each encounter
+        const dUseLeftClip = Math.random() < 0.5;
+        const dCenterX = canvasW / 2;
+        const dCenterY = homeY;
+        const dRx      = canvasW * 0.36;
+        const dRy      = 38;
+        // Flat side is on whichever side was chosen (left ~17% or right ~83%)
+        const dFlatX   = dUseLeftClip ? canvasW * 0.17 : canvasW * 0.83;
+        const dSpeed   = 0.72 + Math.random() * 0.22;
+        for (let i = 0; i < 2; i++) {
+          const e         = this.enemies[i];
+          e.moveMode      = 'd_shape';
+          e.dCenterX      = dCenterX;
+          e.dCenterY      = dCenterY;
+          e.dRx           = dRx;
+          e.dRy           = dRy;
+          e.dFlatX        = dFlatX;
+          e.dUseLeftClip  = dUseLeftClip;
+          e.dSpeed        = dSpeed;
+          // Leader starts at top of arc; follower is 1.3 rad behind
+          e.dPhase        = (i === 0) ? Math.PI * 1.5 : Math.PI * 1.5 - 1.3;
+        }
+
+      } else if (count === 3) {
+        // Centre: left-right sweep only
+        this.enemies[1].moveMode = 'center_sweep';
+
+        // Flanks: Lissajous — independent L-R and U-D oscillators
+        const xAmp = canvasW * 0.13;
+        [[this.enemies[0], 0], [this.enemies[2], Math.PI * 0.55]].forEach(([e, yPhase]) => {
+          e.moveMode      = 'flank_lissajous';
+          e.lissXAmp      = xAmp;
+          e.lissYAmp      = 44;
+          e.lissYFreqMult = 1.3 + Math.random() * 0.15;
+          e.lissYPhase    = yPhase;
+          e.lissPhase     = Math.random() * Math.PI * 2;
+        });
+      }
+    }
+
     // Thargoid mothership: spawn an initial wave of 2 Thargons alongside it
     const mother = this.enemies.find(e => e.typeId === 'thargoid');
     if (mother) {
       this._thargoidMother = mother;
+      // Thargoid: wave movement combining horizontal and vertical oscillation
+      mother.moveMode = 'alien_wave';
+      mother.lissYAmp = 52;
+      // Randomise Thargon orbit direction once per encounter
+      this._thargonOrbitDir = Math.random() < 0.5 ? 1 : -1;
       this._spawnThargons(false);  // intro mode — Thargons slide in with the mothership
     }
   }
@@ -1116,7 +1290,12 @@ export class CombatEncounter {
       Math.min(cw - 24, mother.homeX + offX),
     ];
     for (const tx of xs) {
-      const thargon = new EnemyShip('thargon', tx, mother.homeY);
+      const thargon      = new EnemyShip('thargon', tx, mother.homeY);
+      thargon.moveMode   = 'alien_orbit';
+      thargon.lissXAmp   = 42;
+      thargon.lissYAmp   = 28;
+      thargon.orbitDir   = this._thargonOrbitDir;
+      thargon.lissPhase  = Math.random() * Math.PI * 2;  // stagger start angles
       if (midCombat) {
         thargon.y        = mother.homeY;  // appear at combat position immediately
         thargon.hitFlash = 350;           // brief flash-in effect
