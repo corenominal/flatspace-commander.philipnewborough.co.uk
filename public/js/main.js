@@ -9,8 +9,8 @@
  *   GameLoop    — requestAnimationFrame driver
  */
 
-import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775848621554';
-import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775848621554';
+import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775853268285';
+import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775853268285';
 
 'use strict';
 
@@ -1659,6 +1659,7 @@ function _handlePlayerDeath() {
     // ── Escape Pod Rescue ────────────────────────────────────────────────────
     gameState.inventory         = {};
     gameState.equipment         = {};   // pod consumed; all kit lost with the ship
+    gameState.equipment['pulse_laser'] = 1; // rescued ship fitted with basic armament
     gameState.currentSystem     = GALAXY_SYSTEMS[0]; // Lave
     gameState.destinationSystem = null;
     gameState.hull              = 100;
@@ -1671,7 +1672,7 @@ function _handlePlayerDeath() {
       id:           gameState.commanderLog.length + 1,
       stardate:     _getStardate(),
       title:        'SHIP DESTROYED \u2014 ESCAPE POD ACTIVATED',
-      body:         'Hull integrity failed. Escape pod ejected automatically before total structural collapse.\n\nPod recovered by a passing trader and deposited at Lave Station. All ship cargo and equipment lost. Credits intact.',
+      body:         'Hull integrity failed. Escape pod ejected automatically before total structural collapse.\n\nPod recovered by a passing trader and deposited at Lave Station. All ship cargo and equipment lost. A pulse laser was fitted to the replacement vessel. Credits intact.',
       creditsChange: null,
     });
     saveGame();
@@ -1687,7 +1688,7 @@ function _handlePlayerDeath() {
         <p class="modal-subtitle">SHIP DESTROYED</p>
         <p>Hull integrity failed. Your escape pod ejected automatically.</p>
         <p>A passing trader recovered your pod and dropped you off at <strong>LAVE STATION</strong>.</p>
-        <p>All ship cargo and equipment has been lost. Your credits are intact.</p>
+        <p>All ship cargo and equipment has been lost. A pulse laser has been fitted to your replacement vessel. Your credits are intact.</p>
         <button class="station-btn" id="escape-pod-continue" style="margin-top:1.25rem;width:100%;">&#9658;&nbsp; ACKNOWLEDGED</button>
       </div>
     `;

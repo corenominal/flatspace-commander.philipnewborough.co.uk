@@ -2,19 +2,19 @@
 // To push an update to users: bump this version string (e.g. v1.1, v1.2 …),
 // then deploy.  The browser will install the new SW, delete the old cache,
 // and serve fresh assets on the next page load.
-const CACHE_NAME = 'flatspace-commander-v1.9';
+const CACHE_NAME = 'flatspace-commander-v1.10';
 
 // ─── Assets to pre-cache on install ───────────────────────────────────────────
 const ASSETS = [
     '/',
-    '/index.html?v=1775848621554',
+    '/index.html?v=1775853268285',
     '/manifest.json',
-    '/css/style.css?v=1775848621554',
-    '/js/main.js?v=1775848621554',
+    '/css/style.css?v=1775853268285',
+    '/js/main.js?v=1775853268285',
     '/js/metrics.js?v=1775317593465',
-    '/js/combat.js?v=1775848621554',
-    '/js/procedural.js?v=1775848621554',
-    '/js/vendor/howler.js?v=1775848621554',
+    '/js/combat.js?v=1775853268285',
+    '/js/procedural.js?v=1775853268285',
+    '/js/vendor/howler.js?v=1775853268285',
     '/img/background.png',
     '/img/philip-newborough-yellow-512x512-rounded.png',
     '/audio/blue-danube.mp3',
