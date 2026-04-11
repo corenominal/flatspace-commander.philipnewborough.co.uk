@@ -27,6 +27,8 @@ const LASER_DAMAGE = {
   military_laser: [20, 30],
 };
 
+const MISSILE_DAMAGE = 60;   // direct-hit damage per missile
+
 // Commodity ids that each ship class can drop (matches COMMODITIES in procedural.js)
 const PIRATE_CARGO = [5, 6, 10, 11, 13, 14, 15]; // luxuries, narcotics, firearms, furs, gold, platinum, gems
 const TRADER_CARGO = [0, 1, 2, 4, 8, 9, 12, 13]; // food, textiles, radioactives, liquor, machinery, alloys, minerals, gold
@@ -313,6 +315,7 @@ export const SHIP_CATALOG = {
     name: 'MAMBA',        type: 'pirate', shields: 10,  hull: 50,
     fireInterval: 2000,   fireDmgMin: 8,  fireDmgMax: 12,  speed: 130,
     cargoDrop: [0, 2],    cargoPool: PIRATE_CARGO,  bounty: 75,
+    missiles: 1,
     width: 46, height: 28, drawFn: drawMamba,
   },
   krait: {
@@ -325,18 +328,21 @@ export const SHIP_CATALOG = {
     name: 'FER-DE-LANCE', type: 'pirate', shields: 60,  hull: 100,
     fireInterval: 1500,   fireDmgMin: 12, fireDmgMax: 18,  speed: 110,
     cargoDrop: [1, 3],    cargoPool: PIRATE_CARGO,  bounty: 200,
+    missiles: 2,
     width: 52, height: 36, drawFn: drawFerDeLance,
   },
   aspMkII: {
     name: 'ASP MK II',    type: 'pirate', shields: 40,  hull: 80,
     fireInterval: 2000,   fireDmgMin: 10, fireDmgMax: 15,  speed: 95,
     cargoDrop: [1, 3],    cargoPool: PIRATE_CARGO,  bounty: 150,
+    missiles: 2,
     width: 56, height: 34, drawFn: drawAspMkII,
   },
   moray: {
     name: 'MORAY',        type: 'pirate', shields: 20,  hull: 70,
     fireInterval: 2200,   fireDmgMin: 8,  fireDmgMax: 13,  speed: 80,
     cargoDrop: [0, 2],    cargoPool: PIRATE_CARGO,  bounty: 100,
+    missiles: 1,
     width: 50, height: 32, drawFn: drawMoray,
   },
   // ── Alien ships ───────────────────────────────────────────────────────────
@@ -414,6 +420,101 @@ class LaserBolt {
   update(dt) {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
+  }
+}
+
+// ─── Missile ─────────────────────────────────────────────────────────────────
+
+class Missile {
+  /**
+   * @param {number}   x         — spawn X
+   * @param {number}   y         — spawn Y
+   * @param {function} targetFn  — () => {x, y} | null  — called each frame for homing
+   * @param {number}   initialVy — starting vertical velocity (negative = upward for player missiles)
+   * @param {boolean}  isEnemy   — true for enemy missiles (affects visuals)
+   */
+  constructor(x, y, targetFn, initialVy = -280, isEnemy = false) {
+    this.x        = x;
+    this.y        = y;
+    this.vx       = 0;
+    this.vy       = initialVy;
+    this.alive    = true;
+    this.isEnemy  = isEnemy;
+    this._targetFn = targetFn;
+    this.trail    = [];    // past positions for glitch trail
+  }
+
+  update(dt) {
+    const target = this._targetFn(this.x, this.y);
+    if (target) {
+      const dx  = target.x - this.x;
+      const dy  = target.y - this.y;
+      const mag = Math.hypot(dx, dy) || 1;
+      const TURN = 560;  // homing acceleration (px/s²)
+      this.vx += (dx / mag) * TURN * dt;
+      this.vy += (dy / mag) * TURN * dt;
+      const spd = Math.hypot(this.vx, this.vy);
+      if (spd > 440) {
+        this.vx = (this.vx / spd) * 440;
+        this.vy = (this.vy / spd) * 440;
+      }
+    }
+
+    // Record trail before moving
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > 18) this.trail.shift();
+
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+  }
+
+  draw(ctx) {
+    // Glitch trail — randomly offset pixels with noise scatter
+    // Enemy missiles use dimmer, more erratic trail to distinguish them
+    const trailAlphaMult = this.isEnemy ? 0.55 : 0.75;
+    const jitterX        = this.isEnemy ? 12   : 8;
+    for (let i = 0; i < this.trail.length; i++) {
+      const p     = this.trail[i];
+      const alpha = (i / this.trail.length) * trailAlphaMult;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle   = '#ffffff';
+      const gx = p.x + (Math.random() - 0.5) * jitterX;
+      const gy = p.y + (Math.random() - 0.5) * 4;
+      ctx.fillRect(gx - 1, gy - 1, 2, 2);
+      if (Math.random() < 0.45) {
+        ctx.globalAlpha = alpha * 0.55;
+        ctx.fillRect(
+          p.x + (Math.random() - 0.5) * 14,
+          p.y + (Math.random() - 0.5) * 6,
+          1, 1,
+        );
+      }
+      ctx.restore();
+    }
+
+    // Body — small arrow rotated toward direction of travel
+    // Enemy missiles rendered as a hollow outline to distinguish from player's filled arrow
+    const angle = Math.atan2(this.vy, this.vx);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo( 0, -7);
+    ctx.lineTo( 3,  3);
+    ctx.lineTo( 0,  1);
+    ctx.lineTo(-3,  3);
+    ctx.closePath();
+    if (this.isEnemy) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 1;
+      ctx.globalAlpha = 0.80;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+    }
+    ctx.restore();
   }
 }
 
@@ -656,6 +757,11 @@ class EnemyShip {
 
     this.weaponType = (d.type === 'alien') ? null : _pickEnemyWeapon();
 
+    // Missile inventory — only non-alien ships with missiles: true in SHIP_CATALOG
+    this.missileCount = (d.type !== 'alien' && d.missiles) ? d.missiles : 0;
+    // First missile fires 10–20 s into the fight (staggered to avoid round-one spam)
+    this.missileTimer = this.missileCount > 0 ? (10000 + Math.random() * 10000) : Infinity;
+
     this.homeX     = homeX;
     this.homeY     = homeY;
     this.x         = homeX;
@@ -706,6 +812,14 @@ class EnemyShip {
     return true;
   }
 
+  shouldFireMissile() {
+    if (this.dead || this.missileCount <= 0 || this.missileTimer > 0) return false;
+    this.missileCount -= 1;
+    // If more missiles remain, arm the next one after a delay
+    this.missileTimer = this.missileCount > 0 ? (12000 + Math.random() * 8000) : Infinity;
+    return true;
+  }
+
   fireDamageRoll() {
     return this.fireDmgMin + Math.floor(Math.random() * (this.fireDmgMax - this.fireDmgMin + 1));
   }
@@ -725,7 +839,8 @@ class EnemyShip {
 
   update(dtMs, canvasW) {
     if (this.dead) return;
-    this.fireTimer -= dtMs;
+    this.fireTimer   -= dtMs;
+    this.missileTimer -= dtMs;
     if (this.hitFlash > 0) this.hitFlash -= dtMs;
 
     const marginL = this.width / 2 + 8;
@@ -886,6 +1001,8 @@ export class CombatEncounter {
     this.enemyBolts         = [];
     this.pendingPlayerBolts = [];  // { bolt, delay } — burst queue
     this.pendingEnemyBolts  = [];  // { bolt, delay } — enemy burst queue
+    this.missiles           = [];  // active Missile objects (player)
+    this.enemyMissiles      = [];  // active Missile objects (enemy)
     this.cargoPods          = [];
     this.sparks             = [];
     this.explosions         = [];
@@ -998,6 +1115,27 @@ export class CombatEncounter {
     this._enterResult('playerDestroyed');
   }
 
+  /** Launch a missile from the player's position. */
+  fireMissile(playerX, playerY) {
+    if (this.phase !== 'fighting') return;
+    const enemies = this.enemies;
+    this.missiles.push(new Missile(
+      playerX, playerY,
+      (mx, my) => {
+        let nearest  = null;
+        let nearDist = Infinity;
+        for (const e of enemies) {
+          if (!e.isAlive()) continue;
+          const d = Math.hypot(e.x - mx, e.y - my);
+          if (d < nearDist) { nearDist = d; nearest = e; }
+        }
+        return nearest ? { x: nearest.x, y: nearest.y } : null;
+      },
+      -280,  // fire upward
+      false, // player missile
+    ));
+  }
+
   /**
    * Advance the encounter by one frame.
    * @param {number} dt         — delta time in seconds
@@ -1097,6 +1235,28 @@ export class CombatEncounter {
         ));
       }
       this.callbacks.onEnemyFire?.(e.type, e.weaponType);
+    }
+
+    // Enemy missile fire
+    const encounter = this;
+    for (const e of this.enemies) {
+      if (!e.isAlive()) continue;
+      // Warning fires before the missile: tick the timer but only launch when it crosses zero
+      if (e.missileCount > 0 && e.missileTimer > 0 && e.missileTimer - dt * 1000 <= 1500 && e.missileTimer > 1500) {
+        // Entering the final 1.5 s window before launch — trigger warning
+        this.callbacks.onEnemyMissileWarning?.();
+      }
+      if (!e.shouldFireMissile()) continue;
+      this.callbacks.onEnemyMissileLaunch?.();
+      this.enemyMissiles.push(new Missile(
+        e.x, e.y + e.height * 0.5,
+        () => {
+          const p = encounter._lastPlayerPos;
+          return p ? { x: p.x, y: p.y } : null;
+        },
+        +280,  // fire downward toward player
+        true,  // enemy missile
+      ));
     }
 
     // Player auto-fire
@@ -1221,6 +1381,58 @@ export class CombatEncounter {
     this.playerBolts = this.playerBolts.filter(b => b.alive && b.y > -60);
     this.enemyBolts  = this.enemyBolts.filter(b => b.alive && b.y < canvasH + 60);
 
+    // Update missiles — homing, collision, off-screen cull
+    for (const m of this.missiles) {
+      if (!m.alive) continue;
+      m.update(dt);
+      if (m.y < -60 || m.x < -60 || m.x > canvasW + 60) {
+        m.alive = false;
+        continue;
+      }
+      for (const e of this.enemies) {
+        if (!e.isAlive()) continue;
+        if (Math.hypot(m.x - e.x, m.y - e.y) < (e.width + e.height) * 0.28) {
+          m.alive = false;
+          const sparkCount = 20 + Math.floor(Math.random() * 12);
+          for (let _i = 0; _i < sparkCount; _i++) this.sparks.push(new Spark(m.x, m.y));
+          const wasAlive = e.isAlive();
+          e.takeDamage(MISSILE_DAMAGE);
+          if (wasAlive && !e.isAlive()) {
+            this.callbacks.onShipDestroyed?.(SHIP_CATALOG[e.typeId]);
+            this.callbacks.onEnemyExplode?.(e.type);
+            this._spawnCargo(e);
+            this.explosions.push(new Explosion(e.x, e.y, e.width, e.height));
+            if (e.typeId === 'thargon' && this._thargoidMother?.isAlive()) {
+              const liveThargons = this.enemies.filter(en => en.typeId === 'thargon' && en.isAlive());
+              if (liveThargons.length === 0) this._spawnThargons(true);
+            }
+          }
+          break;
+        }
+      }
+    }
+    this.missiles = this.missiles.filter(m => m.alive);
+
+    // Update enemy missiles — homing toward player, collision, off-screen cull
+    for (const m of this.enemyMissiles) {
+      if (!m.alive) continue;
+      m.update(dt);
+      if (m.y > canvasH + 60 || m.x < -60 || m.x > canvasW + 60) {
+        m.alive = false;
+        continue;
+      }
+      if (
+        Math.abs(m.x - playerX) < playerW * 0.44 &&
+        Math.abs(m.y - playerY) < playerH * 0.50
+      ) {
+        m.alive = false;
+        const sparkCount = 20 + Math.floor(Math.random() * 12);
+        for (let _i = 0; _i < sparkCount; _i++) this.sparks.push(new Spark(m.x, m.y));
+        this.callbacks.onPlayerDamaged?.(MISSILE_DAMAGE);
+      }
+    }
+    this.enemyMissiles = this.enemyMissiles.filter(m => m.alive);
+
     // Update sparks
     for (const sp of this.sparks) sp.update(dt);
     this.sparks = this.sparks.filter(sp => sp.alive);
@@ -1239,13 +1451,17 @@ export class CombatEncounter {
   }
 
   /** Render the complete combat layer over the existing canvas content. */
-  draw(ctx, canvasW, canvasH, ts, laserType) {
+  draw(ctx, canvasW, canvasH, ts, laserType, missileInv = 0) {
     // Enemy ships
     for (const e of this.enemies) e.render(ctx);
 
     // Laser bolts
     for (const b of this.playerBolts) _drawPlayerBolt(ctx, b, laserType);
     for (const b of this.enemyBolts)  _drawEnemyBolt(ctx, b);
+
+    // Missiles
+    for (const m of this.missiles) m.draw(ctx);
+    for (const m of this.enemyMissiles) m.draw(ctx);
 
     // Sparks from bolt impacts
     for (const sp of this.sparks) sp.draw(ctx);
@@ -1257,7 +1473,7 @@ export class CombatEncounter {
     for (const box of this.cargoPods) box.draw(ctx);
 
     // Combat status HUD (replaces flight distance bar at top)
-    this._drawCombatHUD(ctx, canvasW, canvasH, ts, laserType);
+    this._drawCombatHUD(ctx, canvasW, canvasH, ts, laserType, missileInv);
 
     // Result overlay
     if (this.phase === 'result') {
@@ -1329,7 +1545,7 @@ export class CombatEncounter {
     this.cargoPods = this.cargoPods.filter(b => !b.collected && !b.isOffScreen(canvasH));
   }
 
-  _drawCombatHUD(ctx, cw, ch, ts, laserType) {
+  _drawCombatHUD(ctx, cw, ch, ts, laserType, missileInv = 0) {
     const barH = 46;
     const padX = 12;
 
@@ -1358,15 +1574,21 @@ export class CombatEncounter {
     ctx.textBaseline = 'top';
     ctx.fillText('!! COMBAT !!', padX, 7);
 
-    // Laser type label (right side)
+    // Right-side labels: laser type + missile count
+    ctx.font      = `9px 'Courier New', monospace`;
+    ctx.textAlign = 'right';
     if (laserType) {
       const lbl = laserType === 'military_laser' ? 'MILITARY'
                 : laserType === 'beam_laser'     ? 'BEAM' : 'PULSE';
       ctx.fillStyle = 'rgba(255,255,255,0.50)';
-      ctx.font      = `9px 'Courier New', monospace`;
-      ctx.textAlign = 'right';
       ctx.fillText(`LASER: ${lbl}`, cw - padX, 7);
     }
+    // Missile inventory count — flash when empty
+    const mslFlash = missileInv === 0 && Math.floor(ts / 500) % 2 === 0;
+    ctx.fillStyle = missileInv > 0
+      ? 'rgba(255,255,255,0.50)'
+      : (mslFlash ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.35)');
+    ctx.fillText(`MSLS: ${missileInv}`, cw - padX, 19);
 
     // Enemy health bars
     const alive = this.enemies.filter(e => e.isAlive());

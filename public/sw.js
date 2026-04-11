@@ -2,19 +2,19 @@
 // To push an update to users: bump this version string (e.g. v1.1, v1.2 …),
 // then deploy.  The browser will install the new SW, delete the old cache,
 // and serve fresh assets on the next page load.
-const CACHE_NAME = 'flatspace-commander-v1.12';
+const CACHE_NAME = 'flatspace-commander-v1.18';
 
 // ─── Assets to pre-cache on install ───────────────────────────────────────────
 const ASSETS = [
     '/',
-    '/index.html?v=1775853398769',
+    '/index.html?v=1775932367507',
     '/manifest.json',
-    '/css/style.css?v=1775853398769',
-    '/js/main.js?v=1775853398769',
+    '/css/style.css?v=1775932367507',
+    '/js/main.js?v=1775932367507',
     '/js/metrics.js?v=1775317593465',
-    '/js/combat.js?v=1775853398769',
-    '/js/procedural.js?v=1775853398769',
-    '/js/vendor/howler.js?v=1775853398769',
+    '/js/combat.js?v=1775932367507',
+    '/js/procedural.js?v=1775932367507',
+    '/js/vendor/howler.js?v=1775932367507',
     '/img/background.png',
     '/img/philip-newborough-yellow-512x512-rounded.png',
     '/audio/blue-danube.mp3',
@@ -35,6 +35,8 @@ const ASSETS = [
     '/audio/space-flying.mp3',
     '/audio/station-ambience.mp3',
     '/audio/station-exit.mp3',
+    '/audio/missile-launch.mp3',
+    '/audio/missile-warning.mp3',
     '/audio/warning-combat.mp3',
     '/apple-touch-icon.png',
     '/favicon.ico',

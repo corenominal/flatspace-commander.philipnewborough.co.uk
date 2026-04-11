@@ -9,8 +9,8 @@
  *   GameLoop    — requestAnimationFrame driver
  */
 
-import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775853398769';
-import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775853398769';
+import { GalaxyGenerator, getMarketPrices, COMMODITIES } from './procedural.js?v=1775932367507';
+import { SHIP_CATALOG, generateCombatScenario, CombatEncounter } from './combat.js?v=1775932367507';
 
 'use strict';
 
@@ -53,6 +53,7 @@ const ILLEGAL_CARGO_IDS = new Set([3, 6, 10]);  // Labour Contracts, Narcotics, 
  * type 'single' — one-time install; type 'multi' — stackable up to maxOwn.
  */
 const EQUIPMENT_CATALOG = [
+  { id: 'missile',           name: 'MISSILE',              price: 30,   techMin: 1,  maxOwn: 3, type: 'multi'  },
   { id: 'escape_pod',        name: 'ESCAPE POD',           price: 1000, techMin: 1,  maxOwn: 1, type: 'single' },
   { id: 'extra_cargo',       name: 'CARGO BAY +4T',        price: 400,  techMin: 2,  maxOwn: 1, type: 'single' },
   { id: 'pulse_laser',       name: 'PULSE LASER',          price: 400,  techMin: 3,  maxOwn: 1, type: 'single' },
@@ -111,6 +112,10 @@ let _encounterHullDmg     = 0;    // hull % damage taken this encounter
 let _encounterCargo       = {};   // { [commodityId]: count } — cargo collected this encounter
 let _playerDeathPending   = false; // guard to prevent duplicate death handling
 let _deathStarfieldActive = false; // show only starfield after player destruction
+
+// Missile swipe-up detection (touch)
+let _swipeTouchStartX = 0;
+let _swipeTouchStartY = 0;
 
 const galaxy         = new GalaxyGenerator();
 const GALAXY_SYSTEMS = galaxy.generateSector(512, 0);
@@ -1190,6 +1195,15 @@ function showHelpScreen() {
           </ul>
         </section>
         <section class="help-section">
+          <h2 class="help-section-title">COMBAT &amp; MISSILES</h2>
+          <ul class="help-list">
+            <li>Your laser fires automatically during combat encounters.</li>
+            <li><strong>Keyboard:</strong> Press <strong>M</strong> to fire a missile.</li>
+            <li><strong>Touch:</strong> Swipe up on the screen to fire a missile.</li>
+            <li>Missiles must be purchased at a station before use and are consumed on launch.</li>
+          </ul>
+        </section>
+        <section class="help-section">
           <h2 class="help-section-title">STATIONS</h2>
           <ul class="help-list">
             <li>Dock at a space station between jumps to trade, refit, and plan your next route.</li>
@@ -2093,11 +2107,20 @@ function _renderEquipmentScreen(sys) {
     }
     const statusClass = owned ? 'equip-status--owned' : '';
     const canUnequip = owned && item.id !== 'pulse_laser';
-    const actionCell = owned
-      ? (canUnequip
-          ? `<button class="equip-btn--unequip" id="equip-unequip-${escapeHtml(item.id)}">UNEQUIP<br><span class="equip-btn-refund">+${refund}&nbsp;CR</span></button>`
-          : `<button class="equip-btn--buy" disabled>&mdash;</button>`)
-      : `<button class="equip-btn--buy" id="equip-buy-${escapeHtml(item.id)}"${canBuy ? '' : ' disabled'}>BUY</button>`;
+    let actionCell;
+    if (item.type === 'multi') {
+      if (owned >= item.maxOwn) {
+        actionCell = `<button class="equip-btn--buy" disabled>&mdash;</button>`;
+      } else {
+        actionCell = `<button class="equip-btn--buy" id="equip-buy-${escapeHtml(item.id)}"${canBuy ? '' : ' disabled'}>BUY</button>`;
+      }
+    } else {
+      actionCell = owned
+        ? (canUnequip
+            ? `<button class="equip-btn--unequip" id="equip-unequip-${escapeHtml(item.id)}">UNEQUIP<br><span class="equip-btn-refund">+${refund}&nbsp;CR</span></button>`
+            : `<button class="equip-btn--buy" disabled>&mdash;</button>`)
+        : `<button class="equip-btn--buy" id="equip-buy-${escapeHtml(item.id)}"${canBuy ? '' : ' disabled'}>BUY</button>`;
+    }
     return `<tr>
       <td class="equip-name">${escapeHtml(item.name)}</td>
       <td class="equip-price">${item.price}&nbsp;CR</td>
@@ -3867,6 +3890,22 @@ let   launchSequence      = null;
 let   dockingMinigame     = null;
 let   dockingComputerAnim = null;
 
+// ── Missile input: swipe-up (touch) + M key (keyboard) ───────────────────────
+// Track swipe start on the canvas; fire if swipe was upward (dy > 60 px, small dx).
+canvas.addEventListener('touchstart', (e) => {
+  _swipeTouchStartX = e.touches[0].clientX;
+  _swipeTouchStartY = e.touches[0].clientY;
+}, { passive: true });
+canvas.addEventListener('touchend', (e) => {
+  const t   = e.changedTouches[0];
+  const dx  = Math.abs(t.clientX - _swipeTouchStartX);
+  const dy  = _swipeTouchStartY - t.clientY;   // positive = swiped upward
+  if (dy > 60 && dx < 50) _tryFireMissile();
+}, { passive: true });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') _tryFireMissile();
+});
+
 /** Howler sound instances for laser fire during combat. */
 const laserSounds = {
   pulse_laser:    new Howl({ src: ['/audio/laser-pulse.mp3'],    volume: 0.7 }),
@@ -3948,6 +3987,16 @@ const collectSound = new Howl({
   volume: 0.8,
 });
 
+const missileLaunchSound = new Howl({
+  src:    ['/audio/missile-launch.mp3'],
+  volume: 0.9,
+});
+
+const missileWarningSound = new Howl({
+  src:    ['/audio/missile-warning.mp3'],
+  volume: 1.0,
+});
+
 /** All sounds with their base volumes, used to scale against the user's game volume setting. */
 const SFX_SOUNDS = [
   [laserSounds.pulse_laser,    0.7],
@@ -3969,6 +4018,8 @@ const SFX_SOUNDS = [
   [buttonSelectSound,          0.8],
   [warningCombatSound,         1.0],
   [collectSound,               0.8],
+  [missileLaunchSound,         0.9],
+  [missileWarningSound,        1.0],
 ];
 
 let sfxVolume = parseFloat(localStorage.getItem(SFX_VOLUME_KEY) ?? '1');
@@ -4166,6 +4217,17 @@ function _showCombatModal(scenario, onChoice) {
  * Pauses distance drain, shows modal, then either starts canvas combat or
  * resolves non-combat outcomes directly.
  */
+/** Fire a missile if the player has one and combat is active. */
+function _tryFireMissile() {
+  if (!_activeCombat || _activeCombat.phase !== 'fighting' || _activeCombat.playerBlownUp) return;
+  const count = gameState.equipment.missile ?? 0;
+  if (count <= 0) { buttonErrorSound.play(); return; }
+  gameState.equipment.missile = count - 1;
+  _activeCombat.fireMissile(player.x, player.y);
+  missileLaunchSound.play();
+  saveGame();
+}
+
 function _triggerCombatEncounter(scenarioOverride = null) {
   _combatPaused     = true;
   _flightEncounters += 1;
@@ -4244,6 +4306,12 @@ function _triggerCombatEncounter(scenarioOverride = null) {
           } else {
             laserSounds[weaponType]?.play();
           }
+        },
+        onEnemyMissileWarning() {
+          missileWarningSound.play();
+        },
+        onEnemyMissileLaunch() {
+          missileLaunchSound.play();
         },
         onPlayerExplode() {
           explosionSounds.player.play();
@@ -4917,7 +4985,7 @@ function gameLoop(timestamp) {
         canvas.width, canvas.height,
         laserType,
       );
-      _activeCombat.draw(ctx, canvas.width, canvas.height, timestamp, laserType);
+      _activeCombat.draw(ctx, canvas.width, canvas.height, timestamp, laserType, gameState.equipment.missile ?? 0);
 
       if (_activeCombat.done) {
         const outcome = _activeCombat.outcome;
